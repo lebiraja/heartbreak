@@ -13,6 +13,11 @@ export class TitleScene extends Phaser.Scene {
     // Initialize save system first
     await saveSystem.initializeSave();
     
+    // Unlock audio on any user interaction
+    this.input.once('pointerdown', () => {
+      audioManager.unlockAudio();
+    });
+    
     this.cameras.main.setBackgroundColor(COLORS.background);
 
     this.createStarfield();

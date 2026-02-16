@@ -29,8 +29,9 @@ class AudioManager {
           src: [asset.path],
           volume: (asset.volume || 1.0) * this.settings.sfxVolume * this.settings.masterVolume,
           loop: asset.loop || false,
-          preload: false, // Load on demand to avoid blocking
-          html5: true // Use HTML5 Audio for better compatibility
+          preload: true, // Preload audio to avoid 416 errors
+          html5: asset.loop || false, // Use HTML5 only for looping tracks
+          pool: asset.loop ? 1 : 5 // Limit pool size for better resource management
         });
         this.sounds.set(asset.key, sound);
       } catch (error) {
@@ -85,13 +86,18 @@ class AudioManager {
       this.currentMusic = sound;
       const targetVolume = this.settings.musicVolume * this.settings.masterVolume;
       
-      if (fadeIn) {
-        sound.volume(0);
-        sound.play();
-        sound.fade(0, targetVolume, 1000);
-      } else {
-        sound.volume(targetVolume);
-        sound.play();
+      try {
+        if (fadeIn) {
+          sound.volume(0);
+          sound.play();
+          sound.fade(0, targetVolume, 1000);
+        } else {
+          sound.volume(targetVolume);
+          sound.play();
+        }
+      } catch (error) {
+        // Handle autoplay restrictions silently
+        console.warn(`Audio playback blocked: ${key}. User interaction required.`);
       }
     }
   }
@@ -128,6 +134,15 @@ class AudioManager {
     
     if (this.currentMusic) {
       this.currentMusic.volume(this.settings.musicVolume * this.settings.masterVolume);
+    }
+  }
+
+  unlockAudio(): void {
+    // Resume audio context on user interaction
+    try {
+      Howler.ctx?.resume();
+    } catch (error) {
+      console.warn('Failed to unlock audio context:', error);
     }
   }
 

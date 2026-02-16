@@ -9,7 +9,10 @@ export default defineConfig({
   },
   server: {
     port: 3000,
-    open: true
+    open: true,
+    headers: {
+      'Accept-Ranges': 'bytes'
+    }
   },
   build: {
     target: 'es2020',
@@ -25,5 +28,6 @@ export default defineConfig({
       }
     }
   },
-  base: './'
+  base: './',
+  assetsInclude: ['**/*.mp3', '**/*.wav', '**/*.ogg']
 });

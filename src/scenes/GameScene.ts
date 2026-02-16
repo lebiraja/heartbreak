@@ -45,6 +45,23 @@ export class GameScene extends Phaser.Scene {
   init(data: { level: number }): void {
     this.playerState.level = data.level || 1;
     this.levelConfig = LEVEL_CONFIGS[this.playerState.level - 1];
+    
+    // Reset state for new level
+    this.enemies = [];
+    this.projectiles = [];
+    this.chargedProjectiles = [];
+    this.memoryShards = [];
+    this.currentWave = 0;
+    this.waveTimer = 0;
+    this.comboTimer = 0;
+    this.isPaused = false;
+    this.levelComplete = false;
+    
+    this.playerState.health = PLAYER_CONFIG.health;
+    this.playerState.shield = PLAYER_CONFIG.shield;
+    this.playerState.score = 0;
+    this.playerState.combo = 0;
+    this.playerState.memoryShardsCollected = 0;
   }
 
   async create(): Promise<void> {
@@ -65,8 +82,10 @@ export class GameScene extends Phaser.Scene {
       this.particleManager
     );
 
+    // Initialize HUD before any updates
     this.hud = new HUD(this, this.settings);
     this.hud.setQuote(this.levelConfig.quote);
+    this.hud.update(this.playerState);
 
     this.setupEventListeners();
     this.setupPauseControl();
@@ -80,7 +99,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
-    if (this.isPaused) return;
+    if (this.isPaused || !this.hud) return;
 
     if (this.player) {
       this.player.update(time, delta);

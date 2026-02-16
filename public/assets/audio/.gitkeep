@@ -1,0 +1,21 @@
+# Audio Asset Placeholders
+# 
+# Required audio files for production:
+# - menu_music.mp3 (ambient, calm menu theme)
+# - gameplay_music.mp3 (intense, rhythmic combat music)
+# - victory_music.mp3 (triumphant, uplifting theme)
+# - shoot_primary.mp3 (light laser sound)
+# - shoot_secondary.mp3 (heavy charged shot)
+# - enemy_death.mp3 (explosion sound)
+# - player_hit.mp3 (impact sound)
+# - player_death.mp3 (dramatic explosion)
+# - shield_hit.mp3 (energy deflection)
+# - powerup.mp3 (positive chime)
+# - level_complete.mp3 (success jingle)
+# - ui_select.mp3 (menu click)
+# - ui_back.mp3 (back button sound)
+#
+# Recommended sources:
+# - freesound.org
+# - opengameart.org
+# - incompetech.com (music)

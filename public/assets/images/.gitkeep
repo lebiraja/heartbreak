@@ -1,0 +1,8 @@
+# Image Asset Placeholders
+#
+# Optional enhancement images:
+# - logo.png (game logo for title screen)
+# - background_stars.png (star texture)
+# - nebula.png (background effects)
+#
+# Current implementation uses procedural graphics via Phaser Graphics API

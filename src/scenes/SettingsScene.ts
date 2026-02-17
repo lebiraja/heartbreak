@@ -121,7 +121,48 @@ export class SettingsScene extends Phaser.Scene {
       }
     );
 
-    const colorBlindLabel = this.add.text(GAME_CONFIG.width / 2 + 50, 390, 'Color Blind Mode:', {
+    const narrativeLabel = this.add.text(GAME_CONFIG.width / 2 + 50, 340, 'NARRATIVE', {
+      fontSize: '24px',
+      fontFamily: 'monospace',
+      color: '#00ffff',
+      fontStyle: 'bold'
+    });
+
+    // Text Speed
+    const textSpeeds: Array<'slow' | 'normal' | 'fast'> = ['slow', 'normal', 'fast'];
+    let currentSpeedIndex = textSpeeds.indexOf(this.settings.textSpeed ?? 'normal');
+
+    this.add.text(GAME_CONFIG.width / 2 + 50, 390, 'Text Speed:', {
+      fontSize: '16px',
+      fontFamily: 'monospace',
+      color: '#ffffff'
+    });
+
+    const speedText = this.add.text(GAME_CONFIG.width / 2 + 50, 415, textSpeeds[currentSpeedIndex].toUpperCase(), {
+      fontSize: '18px',
+      fontFamily: 'monospace',
+      color: '#00ffff',
+      fontStyle: 'bold'
+    });
+
+    new UIButton(this, GAME_CONFIG.width / 2 + 50, 450, '<', () => {
+      currentSpeedIndex = (currentSpeedIndex - 1 + textSpeeds.length) % textSpeeds.length;
+      this.settings.textSpeed = textSpeeds[currentSpeedIndex];
+      speedText.setText(textSpeeds[currentSpeedIndex].toUpperCase());
+    }, 50, 36);
+
+    new UIButton(this, GAME_CONFIG.width / 2 + 130, 450, '>', () => {
+      currentSpeedIndex = (currentSpeedIndex + 1) % textSpeeds.length;
+      this.settings.textSpeed = textSpeeds[currentSpeedIndex];
+      speedText.setText(textSpeeds[currentSpeedIndex].toUpperCase());
+    }, 50, 36);
+
+    // Subtitles
+    new Checkbox(this, GAME_CONFIG.width / 2 + 50, 490, 'Subtitles / Instant Text', this.settings.subtitles ?? true, (checked) => {
+      this.settings.subtitles = checked;
+    });
+
+    const colorBlindLabel = this.add.text(GAME_CONFIG.width / 2 + 50, 530, 'Color Blind Mode:', {
       fontSize: '16px',
       fontFamily: 'monospace',
       color: '#ffffff'
@@ -130,7 +171,7 @@ export class SettingsScene extends Phaser.Scene {
     const modes = ['none', 'protanopia', 'deuteranopia', 'tritanopia'];
     let currentModeIndex = modes.indexOf(this.settings.colorBlindMode);
 
-    const modeText = this.add.text(GAME_CONFIG.width / 2 + 50, 420, modes[currentModeIndex].toUpperCase(), {
+    const modeText = this.add.text(GAME_CONFIG.width / 2 + 50, 555, modes[currentModeIndex].toUpperCase(), {
       fontSize: '18px',
       fontFamily: 'monospace',
       color: '#00ffff',
@@ -140,7 +181,7 @@ export class SettingsScene extends Phaser.Scene {
     const prevButton = new UIButton(
       this,
       GAME_CONFIG.width / 2 + 50,
-      480,
+      595,
       '<',
       () => {
         currentModeIndex = (currentModeIndex - 1 + modes.length) % modes.length;
@@ -154,7 +195,7 @@ export class SettingsScene extends Phaser.Scene {
     const nextButton = new UIButton(
       this,
       GAME_CONFIG.width / 2 + 150,
-      480,
+      595,
       '>',
       () => {
         currentModeIndex = (currentModeIndex + 1) % modes.length;

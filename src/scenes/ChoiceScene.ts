@@ -108,11 +108,11 @@ export class ChoiceScene extends Phaser.Scene {
       const area = this.cockpit!.getPlayableArea();
       const cx = area.x + area.width / 2;
 
-      // Clear existing UI
-      this.children.each(child => {
-        if (child !== this.cockpit && (child as any).setVisible) {
-          (child as any).setVisible(false);
-        }
+      // Fade out existing UI (all but cockpit at depth 900)
+      this.tweens.add({
+        targets: this.children.getAll().filter(c => (c as any).depth < 900),
+        alpha: 0,
+        duration: 400,
       });
 
       const consequence = new TypewriterText(

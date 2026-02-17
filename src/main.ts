@@ -11,6 +11,7 @@ import { SettingsScene } from '@/scenes/SettingsScene';
 import { OpeningScene } from '@/scenes/OpeningScene';
 import { VignetteScene } from '@/scenes/VignetteScene';
 import { EndingScene } from '@/scenes/EndingScene';
+import { ChoiceScene } from '@/scenes/ChoiceScene';
 import { saveSystem } from '@/systems/SaveSystem';
 import { audioManager } from '@/systems/AudioManager';
 import { narrativeManager } from '@/systems/NarrativeManager';
@@ -43,7 +44,8 @@ const config: Phaser.Types.Core.GameConfig = {
     JournalScene,
     LeaderboardScene,
     SettingsScene,
-    EndingScene
+    EndingScene,
+    ChoiceScene
   ]
 };
 

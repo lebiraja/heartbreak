@@ -9,13 +9,20 @@ export class Enemy extends Phaser.GameObjects.Container {
   public maxHealth: number;
   public scoreValue: number;
   public enemyType: string;
-  
+
   private enemyData: EnemyData;
   private ship: Phaser.GameObjects.Graphics;
+  private afterimage: Phaser.GameObjects.Graphics | null = null;
+  private telegraphTimer: number = 0;
   private target: Phaser.Math.Vector2 | null = null;
   private aiTimer: number = 0;
   private particleManager: ParticleManager;
   private settings: GameSettings;
+  // Mirror mode: player X reference
+  private mirrorPlayerX: number = 640;
+  // Invisible mode state
+  private isVisible_: boolean = true;
+  private invisibleFlashTimer: number = 0;
 
   constructor(
     scene: Phaser.Scene,
@@ -127,6 +134,36 @@ export class Enemy extends Phaser.GameObjects.Container {
             this.y + Math.sin(perpAngle) * strafeDir * 100
           );
           this.aiTimer = 0;
+        }
+        break;
+
+      case 'mirror':
+        // Mirror: move to inverted X-axis position of player
+        this.mirrorPlayerX = playerX;
+        {
+          const mirrorX = this.scene.cameras.main.width - playerX;
+          this.target = new Phaser.Math.Vector2(mirrorX, playerY - 120);
+        }
+        break;
+
+      case 'invisible':
+        // Invisible enemy: mostly invisible, flashes telegraph before attacking
+        this.invisibleFlashTimer += delta;
+        this.telegraphTimer += delta;
+
+        // Telegraph every 3 seconds: flash visible briefly
+        if (this.telegraphTimer > 3000) {
+          this.telegraphTimer = 0;
+          this.ship.setAlpha(0.8);
+          this.scene.time.delayedCall(400, () => {
+            if (this.active) this.ship.setAlpha(0.05);
+          });
+        }
+        // Move straight down while hidden
+        this.target = new Phaser.Math.Vector2(this.x, this.y + 80);
+        if (this.isVisible_) {
+          this.ship.setAlpha(0.05);
+          this.isVisible_ = false;
         }
         break;
     }

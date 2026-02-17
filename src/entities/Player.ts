@@ -95,6 +95,55 @@ export class Player extends Phaser.GameObjects.Container {
     this.handleShooting(time);
     this.handleShieldRegen(delta);
     this.constrainToScreen();
+    this.handleEgoWeapon(delta);
+    this.handleGhostAfterimage(delta);
+    if (this.fogOverlay && this.playableArea) {
+      this.updateFogOverlay(0.4);
+    }
+  }
+
+  private handleEgoWeapon(delta: number): void {
+    if (!this.egoWeaponActive) return;
+    // Drain shield while ego weapon is active
+    this.shieldDrainTimer += delta;
+    if (this.shieldDrainTimer >= 100) {
+      this.shieldDrainTimer = 0;
+      this.shield = Math.max(0, this.shield - 0.5);
+      if (this.shield <= 0 && this.health < this.maxHealth) {
+        this.health = Math.max(0, this.health - 0.2);
+      }
+      if (this.shield <= 0) {
+        // Auto-disable ego weapon when out of shield
+        this.toggleEgoWeapon();
+      }
+    }
+  }
+
+  private handleGhostAfterimage(delta: number): void {
+    if (!this.ghostEnabled) return;
+    this.ghostTimer += delta;
+    if (this.ghostTimer >= this.ghostInterval) {
+      this.ghostTimer = 0;
+      const ghost = this.scene.add.graphics();
+      ghost.lineStyle(1, COLORS.primary, 0.4);
+      ghost.fillStyle(COLORS.primary, 0.1);
+      ghost.beginPath();
+      ghost.moveTo(this.x, this.y - 20);
+      ghost.lineTo(this.x - 12, this.y + 15);
+      ghost.lineTo(this.x, this.y + 10);
+      ghost.lineTo(this.x + 12, this.y + 15);
+      ghost.closePath();
+      ghost.fillPath();
+      ghost.strokePath();
+      ghost.rotation = this.rotation;
+
+      this.scene.tweens.add({
+        targets: ghost,
+        alpha: 0,
+        duration: 400,
+        onComplete: () => ghost.destroy(),
+      });
+    }
   }
 
   private handleMovement(delta: number): void {
@@ -138,12 +187,16 @@ export class Player extends Phaser.GameObjects.Container {
     }
   }
 
+  get damageMultiplier(): number {
+    return this.egoWeaponActive ? 3 : 1;
+  }
+
   private firePrimary(): void {
     const angle = this.rotation - Math.PI / 2;
     const spawnX = this.x + Math.cos(angle) * 20;
     const spawnY = this.y + Math.sin(angle) * 20;
 
-    this.scene.events.emit('playerFirePrimary', { x: spawnX, y: spawnY, angle });
+    this.scene.events.emit('playerFirePrimary', { x: spawnX, y: spawnY, angle, damage: PLAYER_CONFIG.primaryDamage * this.damageMultiplier });
     audioManager.playSfx('shoot_primary', 0.3);
     this.particleManager.screenShake(0.005);
   }
@@ -185,7 +238,8 @@ export class Player extends Phaser.GameObjects.Container {
       this.health -= amount;
       this.particleManager.createHitEffect(this.x, this.y, 0xff0000);
       audioManager.playSfx('player_hit', 0.5);
-      this.particleManager.screenShake(0.02);
+      // Cinematic effect for heavy hits
+      this.particleManager.cinematicDamageEffect(this.x, this.y, amount);
     }
 
     this.updateShieldVisual();
@@ -238,8 +292,69 @@ export class Player extends Phaser.GameObjects.Container {
 
   private playableArea?: Phaser.Geom.Rectangle;
 
+  // Ego weapon state
+  public egoWeaponActive: boolean = false;
+  private egoWeaponOverlay?: Phaser.GameObjects.Graphics;
+  private shieldDrainTimer: number = 0;
+
+  // Ghost afterimage (L1 mechanic)
+  private ghostEnabled: boolean = false;
+  private ghostTimer: number = 0;
+  private ghostInterval: number = 80;
+
+  // Fog visibility effect (L2 mechanic)
+  private fogOverlay?: Phaser.GameObjects.Graphics;
+
   setPlayableArea(area: Phaser.Geom.Rectangle): void {
     this.playableArea = area;
+  }
+
+  toggleEgoWeapon(): void {
+    this.egoWeaponActive = !this.egoWeaponActive;
+
+    if (this.egoWeaponActive) {
+      if (!this.egoWeaponOverlay) {
+        this.egoWeaponOverlay = this.scene.add.graphics();
+        this.add(this.egoWeaponOverlay);
+      }
+      this.egoWeaponOverlay.clear();
+      this.egoWeaponOverlay.lineStyle(2, 0xff4400, 0.8);
+      this.egoWeaponOverlay.strokeCircle(0, 0, 28);
+      this.egoWeaponOverlay.fillStyle(0xff4400, 0.1);
+      this.egoWeaponOverlay.fillCircle(0, 0, 28);
+    } else {
+      this.egoWeaponOverlay?.clear();
+    }
+  }
+
+  enableGhostAfterimage(): void {
+    this.ghostEnabled = true;
+  }
+
+  enableFogEffect(): void {
+    if (!this.fogOverlay) {
+      this.fogOverlay = this.scene.add.graphics();
+      this.fogOverlay.setDepth(500);
+    }
+    this.updateFogOverlay(0.4);
+  }
+
+  disableFogEffect(): void {
+    this.fogOverlay?.clear();
+    this.fogOverlay?.destroy();
+    this.fogOverlay = undefined;
+  }
+
+  private updateFogOverlay(density: number): void {
+    if (!this.fogOverlay || !this.playableArea) return;
+    this.fogOverlay.clear();
+    const area = this.playableArea;
+    // Fog clears around player position, dark elsewhere
+    this.fogOverlay.fillStyle(0x220033, density);
+    this.fogOverlay.fillRect(area.x, area.y, area.width, area.height);
+    // Clear a radius around player
+    this.fogOverlay.fillStyle(0x220033, 0);
+    this.fogOverlay.fillCircle(this.x, this.y, 120);
   }
 
   private constrainToScreen(): void {

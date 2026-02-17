@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG, COLORS } from '@/config';
-import { UIButton, Panel } from '@/ui/UIComponents';
+import { UIButton, CockpitPanel } from '@/ui/UIComponents';
 import { audioManager } from '@/systems/AudioManager';
 
 export class PauseScene extends Phaser.Scene {
@@ -12,12 +12,12 @@ export class PauseScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(0x000000);
     this.cameras.main.setAlpha(0.7);
 
-    const panel = new Panel(
+    const panel = new CockpitPanel(
       this,
       GAME_CONFIG.width / 2 - 200,
-      GAME_CONFIG.height / 2 - 150,
+      GAME_CONFIG.height / 2 - 160,
       400,
-      300,
+      320,
       'PAUSED'
     );
 

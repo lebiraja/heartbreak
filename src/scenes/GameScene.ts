@@ -1,8 +1,9 @@
 import Phaser from 'phaser';
-import { GAME_CONFIG, PLAYER_CONFIG, ENEMY_TYPES, LEVEL_CONFIGS } from '@/config';
+import { GAME_CONFIG, PLAYER_CONFIG, ENEMY_TYPES, LEVEL_CONFIGS, BOSS_DATA } from '@/config';
 import type { PlayerState, LevelConfig, GameSettings } from '@/types';
 import { Player } from '@/entities/Player';
 import { Enemy } from '@/entities/Enemy';
+import { Boss } from '@/entities/Boss';
 import { Projectile, ChargedProjectile, MemoryShard } from '@/entities/Projectile';
 import { HUD } from '@/ui/HUD';
 import { ParticleManager } from '@/systems/ParticleManager';
@@ -48,6 +49,12 @@ export class GameScene extends Phaser.Scene {
   private whisperSystem?: WhisperSystem;
   private environmentManager?: EnvironmentManager;
   private timeSinceLastWave: number = 0;
+  private choicePending: boolean = false;
+  private l5ChoiceMade: boolean = false;
+  private boss?: Boss;
+  private bossProjectiles: Projectile[] = [];
+  private bossSpawned: boolean = false;
+  private l9SecondChoiceMade: boolean = false;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -77,6 +84,12 @@ export class GameScene extends Phaser.Scene {
     this.playerState.egoWeaponActive = false;
     this.playerState.enemiesKilled = 0;
     this.playerState.enemiesDodged = 0;
+    this.bossSpawned = false;
+    this.boss = undefined;
+    this.bossProjectiles = [];
+    this.l5ChoiceMade = false;
+    this.l9SecondChoiceMade = false;
+    this.choicePending = false;
   }
 
   async create(): Promise<void> {
@@ -121,6 +134,7 @@ export class GameScene extends Phaser.Scene {
 
     this.setupEventListeners();
     this.setupPauseControl();
+    this.setupLevelMechanic();
 
     audioManager.stopMusic();
     audioManager.playMusic('gameplay_music', true);
@@ -155,6 +169,9 @@ export class GameScene extends Phaser.Scene {
         timeSinceLastWave: this.timeSinceLastWave,
       });
     }
+
+    // Adaptive audio: crossfade combat/ambient layers
+    audioManager.setCombatState(this.enemies.length > 0);
 
     this.enemies.forEach((enemy, index) => {
       if (this.player) {
@@ -232,24 +249,71 @@ export class GameScene extends Phaser.Scene {
 
     this.hud.update(this.playerState);
 
+    // Boss update and projectile handling
+    if (this.boss) {
+      if (this.player) {
+        this.boss.update(delta, this.player.x, this.player.y);
+      }
+      this.bossProjectiles.forEach((p, i) => {
+        p.update(delta);
+        if (p.isOffScreen()) {
+          p.destroy();
+          this.bossProjectiles.splice(i, 1);
+          return;
+        }
+        if (this.player && Phaser.Math.Distance.Between(p.x, p.y, this.player.x, this.player.y) < 20) {
+          this.player.takeDamage(p.damage);
+          p.destroy();
+          this.bossProjectiles.splice(i, 1);
+        }
+      });
+      this.projectiles.forEach((p, i) => {
+        if (p.isPlayerProjectile && this.boss) {
+          if (Phaser.Math.Distance.Between(p.x, p.y, this.boss.x, this.boss.y) < 40) {
+            const killed = this.boss.takeDamage(p.damage);
+            p.destroy();
+            this.projectiles.splice(i, 1);
+            if (killed) {
+              this.boss = undefined;
+              this.playerState.score += 5000;
+            }
+          }
+        }
+      });
+    }
+
     if (this.currentWave < this.levelConfig.waves.length) {
       this.waveTimer += delta;
       if (this.waveTimer >= this.levelConfig.waves[this.currentWave].delay && this.enemies.length === 0) {
         this.startNextWave();
       }
-    } else if (this.enemies.length === 0 && !this.levelComplete) {
-      this.completeLevel();
+    } else if (this.enemies.length === 0 && !this.boss && !this.levelComplete) {
+      // Spawn boss for L5 (miniboss) and L10 (final boss) after all waves
+      if (!this.bossSpawned && (this.playerState.level === 5 || this.playerState.level === 10)) {
+        this.spawnBoss();
+      } else {
+        this.completeLevel();
+      }
+    }
+
+    // L5 proximity-based choice: NPC encounter (trust_bridge)
+    if (this.playerState.level === 5 && !this.l5ChoiceMade && !this.choicePending) {
+      const alreadyMade = narrativeManager.getChoiceMade('trust_bridge');
+      if (!alreadyMade && this.player && this.enemies.length === 0 && this.currentWave >= 2) {
+        this.l5ChoiceMade = true;
+        this.triggerChoice('trust_bridge');
+      }
     }
   }
 
   private setupEventListeners(): void {
-    this.events.on('playerFirePrimary', (data: { x: number; y: number; angle: number }) => {
+    this.events.on('playerFirePrimary', (data: { x: number; y: number; angle: number; damage?: number }) => {
       const projectile = new Projectile(
         this,
         data.x,
         data.y,
         data.angle,
-        PLAYER_CONFIG.primaryDamage,
+        data.damage ?? PLAYER_CONFIG.primaryDamage,
         true,
         this.particleManager
       );
@@ -281,6 +345,20 @@ export class GameScene extends Phaser.Scene {
           level: this.playerState.level,
           victory: false
         });
+      });
+    });
+
+    this.events.on('bossFireProjectile', (data: { x: number; y: number; angle: number }) => {
+      const p = new Projectile(this, data.x, data.y, data.angle, 20, false, this.particleManager);
+      this.bossProjectiles.push(p);
+    });
+
+    this.events.on('bossDestroyed', () => {
+      this.playerState.score += 5000;
+      this.boss = undefined;
+      // Trigger level complete after short delay
+      this.time.delayedCall(1500, () => {
+        if (!this.levelComplete) this.completeLevel();
       });
     });
   }
@@ -373,12 +451,193 @@ export class GameScene extends Phaser.Scene {
       timestamp: Date.now()
     });
 
+    // Unlock journal entries for completed level
+    await saveSystem.updateJournalUnlock(this.playerState.level, {
+      quoteUnlocked: true,
+      reflectionUnlocked: true,
+      whispersUnlocked: true,
+    });
+
+    const level = this.playerState.level;
+
+    // L7: Behavior detection — organic choice based on kill/dodge ratio
+    if (level === 7) {
+      const alreadyMade = narrativeManager.getChoiceMade('chaos_current');
+      if (!alreadyMade) {
+        const total = this.playerState.enemiesKilled + this.playerState.enemiesDodged;
+        const aggRatio = total > 0 ? this.playerState.enemiesKilled / total : 0.5;
+        // Auto-record based on behavior — aggressive if killed >60%, defensive otherwise
+        const selectedOption = aggRatio > 0.6 ? 'aggressive' : 'defensive';
+        narrativeManager.recordChoice('chaos_current', selectedOption, level);
+        await narrativeManager.save();
+      }
+    }
+
+    // L9: TWO choices — helm_mercy first, then helm_risk
+    if (level === 9) {
+      const mercyMade = narrativeManager.getChoiceMade('helm_mercy');
+      const riskMade = narrativeManager.getChoiceMade('helm_risk');
+
+      if (!mercyMade) {
+        this.time.delayedCall(1000, () => {
+          // After mercy choice, chain to risk choice via ChoiceScene returnData
+          this.scene.start('ChoiceScene', {
+            choiceId: 'helm_mercy',
+            returnScene: 'ChoiceScene',
+            returnData: {
+              choiceId: 'helm_risk',
+              returnScene: 'GameOverScene',
+              returnData: {
+                score: this.playerState.score,
+                level: this.playerState.level,
+                victory: true,
+              },
+            },
+          });
+        });
+        return;
+      } else if (!riskMade) {
+        this.time.delayedCall(1000, () => {
+          this.triggerChoice('helm_risk');
+        });
+        return;
+      }
+    }
+
+    // L10: homecoming — final choice before ending
+    if (level === 10) {
+      const alreadyMade = narrativeManager.getChoiceMade('homecoming');
+      if (!alreadyMade) {
+        this.time.delayedCall(1000, () => {
+          this.triggerChoice('homecoming');
+        });
+        return;
+      }
+    }
+
     this.time.delayedCall(2000, () => {
       this.scene.start('GameOverScene', {
         score: this.playerState.score,
         level: this.playerState.level,
         victory: true
       });
+    });
+  }
+
+  private spawnBoss(): void {
+    this.bossSpawned = true;
+    const bossKey = this.playerState.level === 5 ? 'miniboss_1' : 'final_boss';
+    const bossData = BOSS_DATA[bossKey];
+    if (!bossData) return;
+
+    this.showMechanicHint(
+      this.playerState.level === 5 ? '[ WARDEN INCOMING ]' : '[ THE KEEPER — FINAL CONFRONTATION ]'
+    );
+
+    this.time.delayedCall(1000, () => {
+      this.boss = new Boss(
+        this,
+        GAME_CONFIG.width / 2,
+        -80,
+        bossData,
+        this.particleManager
+      );
+    });
+  }
+
+  private setupLevelMechanic(): void {
+    const level = this.playerState.level;
+
+    switch (level) {
+      case 1:
+        // Ghost afterimage — visual echo of player movement
+        if (this.player) {
+          this.player.enableGhostAfterimage();
+        }
+        break;
+
+      case 2:
+        // Fog zones — reduce visibility for player
+        if (this.player) {
+          this.player.enableFogEffect();
+        }
+        break;
+
+      case 4:
+        // Quiet Signals — show telegraph hint to player
+        this.showMechanicHint('[ LISTEN ] Watch for enemy glow — dodge before they fire');
+        // Enemies in L4 use 'sniper' type which already has a slow fire pattern
+        break;
+
+      case 6:
+        // Ego weapon — bind E key to toggle
+        if (this.input.keyboard) {
+          const eKey = this.input.keyboard.addKey('E');
+          eKey.on('down', () => {
+            if (this.player) {
+              this.player.toggleEgoWeapon();
+              this.playerState.egoWeaponActive = this.player.egoWeaponActive;
+            }
+          });
+          // Show brief hint
+          this.showMechanicHint('[ E ] — TOGGLE EGO WEAPON  |  3x Damage / Shield Drain');
+        }
+        break;
+
+      case 8:
+        // Power-up spawning — memory shards become power-ups
+        this.events.on('enemyDestroyed', () => {
+          if (Math.random() < 0.08) {
+            this.spawnPowerUp();
+          }
+        });
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  private showMechanicHint(text: string): void {
+    const playArea = this.hud.getPlayableArea();
+    const hint = this.add.text(
+      playArea.x + playArea.width / 2,
+      playArea.y + 20,
+      text,
+      {
+        fontSize: '14px',
+        fontFamily: 'monospace',
+        color: '#ffaa00',
+      }
+    ).setOrigin(0.5).setDepth(990).setAlpha(0);
+
+    this.tweens.add({
+      targets: hint,
+      alpha: 1,
+      duration: 600,
+      hold: 3000,
+      yoyo: true,
+      onComplete: () => hint.destroy(),
+    });
+  }
+
+  private spawnPowerUp(): void {
+    const x = Phaser.Math.Between(100, GAME_CONFIG.width - 100);
+    const y = -30;
+    const shard = new MemoryShard(this, x, y);
+    this.memoryShards.push(shard);
+  }
+
+  private triggerChoice(choiceId: string): void {
+    this.choicePending = true;
+    this.scene.start('ChoiceScene', {
+      choiceId,
+      returnScene: 'GameOverScene',
+      returnData: {
+        score: this.playerState.score,
+        level: this.playerState.level,
+        victory: true,
+      },
     });
   }
 

@@ -11,6 +11,9 @@ interface SoundAsset {
 class AudioManager {
   private sounds: Map<string, Howl> = new Map();
   private currentMusic: Howl | null = null;
+  private ambientLayer: Howl | null = null;
+  private combatLayer: Howl | null = null;
+  private isInCombat: boolean = false;
   private settings: { masterVolume: number; musicVolume: number; sfxVolume: number };
 
   constructor() {
@@ -146,9 +149,67 @@ class AudioManager {
     }
   }
 
+  /**
+   * 3-Layer adaptive audio:
+   * - Base layer: always playing (main music)
+   * - Ambient layer: plays when not in combat (low pass, quiet)
+   * - Combat layer: crossfades in when enemies are present
+   */
+  startAmbientLayer(key: string): void {
+    const sound = this.sounds.get(key);
+    if (!sound) return;
+    this.ambientLayer = sound;
+    const vol = this.settings.musicVolume * this.settings.masterVolume * 0.4;
+    try {
+      sound.volume(vol);
+      sound.play();
+    } catch (e) { /* silent */ }
+  }
+
+  startCombatLayer(key: string): void {
+    const sound = this.sounds.get(key);
+    if (!sound) return;
+    this.combatLayer = sound;
+    try {
+      sound.volume(0);
+      sound.play();
+    } catch (e) { /* silent */ }
+  }
+
+  setCombatState(inCombat: boolean): void {
+    if (this.isInCombat === inCombat) return;
+    this.isInCombat = inCombat;
+
+    const targetVol = this.settings.musicVolume * this.settings.masterVolume;
+    const ambientVol = targetVol * 0.4;
+    const combatVol = targetVol * 0.7;
+
+    try {
+      if (inCombat) {
+        this.ambientLayer?.fade(ambientVol, 0, 800);
+        this.combatLayer?.fade(0, combatVol, 800);
+      } else {
+        this.ambientLayer?.fade(0, ambientVol, 1200);
+        this.combatLayer?.fade(combatVol, 0, 1200);
+      }
+    } catch (e) { /* silent */ }
+  }
+
+  stopLayeredAudio(): void {
+    try {
+      this.ambientLayer?.stop();
+      this.combatLayer?.stop();
+    } catch (e) { /* silent */ }
+    this.ambientLayer = null;
+    this.combatLayer = null;
+    this.isInCombat = false;
+  }
+
   stopAll(): void {
     Howler.stop();
     this.currentMusic = null;
+    this.ambientLayer = null;
+    this.combatLayer = null;
   }
 }
 

@@ -1,5 +1,5 @@
 import localforage from 'localforage';
-import type { SaveData, GameSettings, LeaderboardEntry } from '@/types';
+import type { SaveData, GameSettings, LeaderboardEntry, ChoiceResult, EmotionalPath, JournalUnlockState } from '@/types';
 import { DEFAULT_SETTINGS } from '@/config';
 
 class SaveSystem {
@@ -33,7 +33,15 @@ class SaveSystem {
         totalPlayTime: 0,
         deathCount: 0,
         perfectLevels: 0
-      }
+      },
+      choicesMade: [],
+      narrativeState: {
+        whispersShown: [],
+        vignettesSeen: [],
+        reflectionsSeen: [],
+      },
+      emotionalPath: 'balanced',
+      journalUnlockProgress: {},
     };
 
     await this.saveGame(newSave);
@@ -50,7 +58,11 @@ class SaveSystem {
 
   async loadGame(): Promise<SaveData | null> {
     try {
-      return await this.db.getItem<SaveData>(this.SAVE_KEY);
+      const save = await this.db.getItem<SaveData>(this.SAVE_KEY);
+      if (save) {
+        return await this.migrateSave(save);
+      }
+      return null;
     } catch (error) {
       console.error('Failed to load game:', error);
       return null;
@@ -100,12 +112,85 @@ class SaveSystem {
     }
   }
 
+  async saveChoice(choice: ChoiceResult): Promise<void> {
+    const save = await this.loadGame();
+    if (save) {
+      save.choicesMade = save.choicesMade ?? [];
+      // Avoid duplicate choices for same choiceId
+      save.choicesMade = save.choicesMade.filter(c => c.choiceId !== choice.choiceId);
+      save.choicesMade.push(choice);
+      await this.saveGame(save);
+    }
+  }
+
+  async getChoices(): Promise<ChoiceResult[]> {
+    const save = await this.loadGame();
+    return save?.choicesMade ?? [];
+  }
+
+  async saveNarrativeState(narrativeState: SaveData['narrativeState'], emotionalPath: EmotionalPath): Promise<void> {
+    const save = await this.loadGame();
+    if (save) {
+      save.narrativeState = narrativeState;
+      save.emotionalPath = emotionalPath;
+      await this.saveGame(save);
+    }
+  }
+
+  async updateJournalUnlock(level: number, state: Partial<JournalUnlockState>): Promise<void> {
+    const save = await this.loadGame();
+    if (save) {
+      save.journalUnlockProgress = save.journalUnlockProgress ?? {};
+      const current = save.journalUnlockProgress[level] ?? {
+        quoteUnlocked: false,
+        reflectionUnlocked: false,
+        whispersUnlocked: false,
+      };
+      save.journalUnlockProgress[level] = { ...current, ...state };
+      await this.saveGame(save);
+    }
+  }
+
   async clearSave(): Promise<void> {
     try {
       await this.db.removeItem(this.SAVE_KEY);
     } catch (error) {
       console.error('Failed to clear save:', error);
     }
+  }
+
+  /**
+   * Migrate old saves to include new fields, preventing crashes on load.
+   */
+  async migrateSave(save: SaveData): Promise<SaveData> {
+    let dirty = false;
+
+    if (!save.choicesMade) {
+      save.choicesMade = [];
+      dirty = true;
+    }
+    if (!save.narrativeState) {
+      save.narrativeState = { whispersShown: [], vignettesSeen: [], reflectionsSeen: [] };
+      dirty = true;
+    }
+    if (!save.emotionalPath) {
+      save.emotionalPath = 'balanced';
+      dirty = true;
+    }
+    if (!save.journalUnlockProgress) {
+      save.journalUnlockProgress = {};
+      dirty = true;
+    }
+    if (save.settings && !save.settings.textSpeed) {
+      save.settings.textSpeed = 'normal';
+      save.settings.subtitles = save.settings.subtitles ?? true;
+      dirty = true;
+    }
+
+    if (dirty) {
+      await this.saveGame(save);
+    }
+    return save;
   }
 }
 

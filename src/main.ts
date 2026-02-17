@@ -8,8 +8,12 @@ import { GameOverScene } from '@/scenes/GameOverScene';
 import { JournalScene } from '@/scenes/JournalScene';
 import { LeaderboardScene } from '@/scenes/LeaderboardScene';
 import { SettingsScene } from '@/scenes/SettingsScene';
+import { OpeningScene } from '@/scenes/OpeningScene';
+import { VignetteScene } from '@/scenes/VignetteScene';
+import { EndingScene } from '@/scenes/EndingScene';
 import { saveSystem } from '@/systems/SaveSystem';
 import { audioManager } from '@/systems/AudioManager';
+import { narrativeManager } from '@/systems/NarrativeManager';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -30,13 +34,16 @@ const config: Phaser.Types.Core.GameConfig = {
   },
   scene: [
     TitleScene,
+    OpeningScene,
     LevelSelectScene,
+    VignetteScene,
     GameScene,
     PauseScene,
     GameOverScene,
     JournalScene,
     LeaderboardScene,
-    SettingsScene
+    SettingsScene,
+    EndingScene
   ]
 };
 
@@ -44,6 +51,9 @@ async function initializeGame() {
   try {
     // Initialize save system
     await saveSystem.initializeSave();
+
+    // Initialize narrative system
+    await narrativeManager.initialize();
 
     // Initialize audio (non-blocking)
     audioManager.initialize([

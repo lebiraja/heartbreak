@@ -6,9 +6,13 @@ import { Enemy } from '@/entities/Enemy';
 import { Projectile, ChargedProjectile, MemoryShard } from '@/entities/Projectile';
 import { HUD } from '@/ui/HUD';
 import { ParticleManager } from '@/systems/ParticleManager';
+import { EnvironmentManager } from '@/systems/EnvironmentManager';
 import { saveSystem } from '@/systems/SaveSystem';
 import { audioManager } from '@/systems/AudioManager';
 import { safeGetSettings } from '@/utils/settingsHelper';
+import { narrativeManager } from '@/systems/NarrativeManager';
+import { WhisperSystem } from '@/systems/WhisperSystem';
+import { LEVEL_NAMES } from '@/config';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -27,7 +31,11 @@ export class GameScene extends Phaser.Scene {
     score: 0,
     combo: 0,
     level: 1,
-    memoryShardsCollected: 0
+    memoryShardsCollected: 0,
+    activeBuffs: [],
+    egoWeaponActive: false,
+    enemiesKilled: 0,
+    enemiesDodged: 0,
   };
 
   private levelConfig!: LevelConfig;
@@ -37,6 +45,9 @@ export class GameScene extends Phaser.Scene {
   private comboTimer: number = 0;
   private isPaused: boolean = false;
   private levelComplete: boolean = false;
+  private whisperSystem?: WhisperSystem;
+  private environmentManager?: EnvironmentManager;
+  private timeSinceLastWave: number = 0;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -62,6 +73,10 @@ export class GameScene extends Phaser.Scene {
     this.playerState.score = 0;
     this.playerState.combo = 0;
     this.playerState.memoryShardsCollected = 0;
+    this.playerState.activeBuffs = [];
+    this.playerState.egoWeaponActive = false;
+    this.playerState.enemiesKilled = 0;
+    this.playerState.enemiesDodged = 0;
   }
 
   async create(): Promise<void> {
@@ -70,7 +85,6 @@ export class GameScene extends Phaser.Scene {
     this.settings = safeGetSettings(save?.settings);
 
     this.cameras.main.setBackgroundColor(0x0a0a1a);
-    this.createStarfield();
 
     this.particleManager = new ParticleManager(this, this.settings);
 
@@ -85,7 +99,25 @@ export class GameScene extends Phaser.Scene {
     // Initialize HUD before any updates
     this.hud = new HUD(this, this.settings);
     this.hud.setQuote(this.levelConfig.quote);
+    this.hud.setLevelName(LEVEL_NAMES[this.playerState.level] ?? '');
     this.hud.update(this.playerState);
+
+    // Initialize environment manager for level-specific backgrounds
+    const playArea = this.hud.getPlayableArea();
+    this.environmentManager = new EnvironmentManager(this, this.playerState.level, playArea);
+
+    // Apply mood shift based on emotional path from choices
+    const emotionalPath = narrativeManager.computeEmotionalPath();
+    this.environmentManager.applyMoodShift(emotionalPath);
+
+    // Initialize whisper system for mid-level narrative
+    this.whisperSystem = new WhisperSystem(this, this.playerState.level);
+    this.timeSinceLastWave = 0;
+
+    // Constrain player to playable area (within cockpit bounds)
+    if (this.player && playArea) {
+      this.player.setPlayableArea(playArea);
+    }
 
     this.setupEventListeners();
     this.setupPauseControl();
@@ -101,10 +133,27 @@ export class GameScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     if (this.isPaused || !this.hud) return;
 
+    // Track time since last wave for whisper triggers
+    this.timeSinceLastWave += delta;
+
+    // Update environment visuals
+    if (this.environmentManager) {
+      this.environmentManager.update(delta);
+    }
+
     if (this.player) {
       this.player.update(time, delta);
       this.playerState.health = this.player.health;
       this.playerState.shield = this.player.shield;
+    }
+
+    // Update whisper system
+    if (this.whisperSystem) {
+      this.whisperSystem.update(delta, {
+        inCombat: this.enemies.length > 0,
+        playerHealthPercent: this.playerState.health / this.playerState.maxHealth,
+        timeSinceLastWave: this.timeSinceLastWave,
+      });
     }
 
     this.enemies.forEach((enemy, index) => {
@@ -214,6 +263,7 @@ export class GameScene extends Phaser.Scene {
 
     this.events.on('enemyDestroyed', (data: { score: number; x: number; y: number }) => {
       this.playerState.combo++;
+      this.playerState.enemiesKilled++;
       this.comboTimer = 3000;
       const comboMultiplier = Math.min(this.playerState.combo, 10);
       this.playerState.score += data.score * comboMultiplier;
@@ -329,27 +379,6 @@ export class GameScene extends Phaser.Scene {
         level: this.playerState.level,
         victory: true
       });
-    });
-  }
-
-  private createStarfield(): void {
-    const stars = this.add.group();
-    for (let i = 0; i < 50; i++) {
-      const x = Phaser.Math.Between(0, GAME_CONFIG.width);
-      const y = Phaser.Math.Between(0, GAME_CONFIG.height);
-      const star = this.add.circle(x, y, 1, 0xffffff, 0.8);
-      stars.add(star);
-    }
-
-    this.tweens.add({
-      targets: stars.getChildren(),
-      y: '+=720',
-      duration: 3000,
-      repeat: -1,
-      onRepeat: (tween, target: any) => {
-        target.y = -10;
-        target.x = Phaser.Math.Between(0, GAME_CONFIG.width);
-      }
     });
   }
 

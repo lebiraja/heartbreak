@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { COLORS, GAME_CONFIG } from '@/config';
+import { COLORS, GAME_CONFIG, COCKPIT_CONFIG, DEFAULT_SETTINGS } from '@/config';
 
 export class UIButton extends Phaser.GameObjects.Container {
   private background: Phaser.GameObjects.Graphics;
@@ -301,5 +301,219 @@ export class Checkbox extends Phaser.GameObjects.Container {
 
   isChecked(): boolean {
     return this._checked;
+  }
+}
+
+// ========================================
+// TypewriterText - Character-by-character text rendering
+// ========================================
+
+export class TypewriterText extends Phaser.GameObjects.Container {
+  private displayText: Phaser.GameObjects.Text;
+  private fullText: string = '';
+  private currentIndex: number = 0;
+  private timer?: Phaser.Time.TimerEvent;
+  private _isComplete: boolean = false;
+  private completeCallbacks: (() => void)[] = [];
+  private textSpeed: 'slow' | 'normal' | 'fast';
+  private subtitlesMode: boolean;
+  private bgPanel?: Phaser.GameObjects.Graphics;
+
+  private static readonly SPEED_MAP = {
+    slow: 60,
+    normal: 35,
+    fast: 15,
+  };
+
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    style: Phaser.Types.GameObjects.Text.TextStyle = {},
+    textSpeed?: 'slow' | 'normal' | 'fast',
+    subtitles?: boolean,
+    maxWidth?: number
+  ) {
+    super(scene, x, y);
+
+    this.textSpeed = textSpeed ?? (DEFAULT_SETTINGS.textSpeed as 'slow' | 'normal' | 'fast');
+    this.subtitlesMode = subtitles ?? false;
+
+    const defaultStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontSize: '20px',
+      fontFamily: 'Georgia, serif',
+      color: '#ffffff',
+      wordWrap: maxWidth ? { width: maxWidth } : undefined,
+      lineSpacing: 6,
+    };
+
+    if (this.subtitlesMode) {
+      this.bgPanel = scene.add.graphics();
+      this.add(this.bgPanel);
+    }
+
+    this.displayText = scene.add.text(0, 0, '', { ...defaultStyle, ...style });
+    this.add(this.displayText);
+
+    scene.add.existing(this);
+  }
+
+  start(text: string): void {
+    this.fullText = text;
+    this.currentIndex = 0;
+    this._isComplete = false;
+
+    if (this.subtitlesMode) {
+      // Show all text immediately in subtitles mode
+      this.displayText.setText(text);
+      this.drawSubtitleBg();
+      this._isComplete = true;
+      this.completeCallbacks.forEach(cb => cb());
+      return;
+    }
+
+    this.displayText.setText('');
+
+    const delay = TypewriterText.SPEED_MAP[this.textSpeed];
+    this.timer = this.scene.time.addEvent({
+      delay,
+      callback: this.addNextChar,
+      callbackScope: this,
+      loop: true,
+    });
+  }
+
+  private addNextChar(): void {
+    if (this.currentIndex >= this.fullText.length) {
+      this.timer?.destroy();
+      this._isComplete = true;
+      this.completeCallbacks.forEach(cb => cb());
+      return;
+    }
+
+    this.currentIndex++;
+    this.displayText.setText(this.fullText.substring(0, this.currentIndex));
+  }
+
+  private drawSubtitleBg(): void {
+    if (!this.bgPanel) return;
+    this.bgPanel.clear();
+    const bounds = this.displayText.getBounds();
+    const pad = 8;
+    this.bgPanel.fillStyle(0x000000, 0.7);
+    this.bgPanel.fillRoundedRect(
+      -pad,
+      -pad,
+      bounds.width + pad * 2,
+      bounds.height + pad * 2,
+      4
+    );
+  }
+
+  skip(): void {
+    if (this._isComplete) return;
+    this.timer?.destroy();
+    this.displayText.setText(this.fullText);
+    this.currentIndex = this.fullText.length;
+    this._isComplete = true;
+    if (this.subtitlesMode) this.drawSubtitleBg();
+    this.completeCallbacks.forEach(cb => cb());
+  }
+
+  isComplete(): boolean {
+    return this._isComplete;
+  }
+
+  onComplete(callback: () => void): void {
+    this.completeCallbacks.push(callback);
+  }
+
+  clear(): void {
+    this.timer?.destroy();
+    this.displayText.setText('');
+    this.fullText = '';
+    this.currentIndex = 0;
+    this._isComplete = false;
+    this.bgPanel?.clear();
+  }
+
+  setTextSpeed(speed: 'slow' | 'normal' | 'fast'): void {
+    this.textSpeed = speed;
+  }
+
+  destroy(fromScene?: boolean): void {
+    this.timer?.destroy();
+    super.destroy(fromScene);
+  }
+}
+
+// ========================================
+// CockpitPanel - Metallic styled panel matching cockpit aesthetic
+// ========================================
+
+export class CockpitPanel extends Phaser.GameObjects.Container {
+  private background: Phaser.GameObjects.Graphics;
+  private titleText?: Phaser.GameObjects.Text;
+
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    title?: string
+  ) {
+    super(scene, x, y);
+
+    this.background = scene.add.graphics();
+
+    // Dark metallic base
+    this.background.fillStyle(COCKPIT_CONFIG.metalColor, 0.95);
+    this.background.fillRect(0, 0, width, height);
+
+    // Highlight strips
+    for (let sy = 8; sy < height - 8; sy += 16) {
+      this.background.fillStyle(COCKPIT_CONFIG.metalHighlight, 0.2);
+      this.background.fillRect(4, sy, width - 8, 3);
+    }
+
+    // Outer border (metallic)
+    this.background.lineStyle(3, 0x555566, 0.8);
+    this.background.strokeRect(0, 0, width, height);
+
+    // Inner accent border (cyan)
+    this.background.lineStyle(1, COCKPIT_CONFIG.accentColor, 0.35);
+    this.background.strokeRect(6, 6, width - 12, height - 12);
+
+    // Corner rivets
+    const rivetPositions = [
+      [8, 8], [width - 8, 8], [8, height - 8], [width - 8, height - 8]
+    ];
+    for (const [rx, ry] of rivetPositions) {
+      this.background.fillStyle(0x666677, 0.7);
+      this.background.fillCircle(rx, ry, 3);
+      this.background.fillStyle(0xaaaabb, 0.3);
+      this.background.fillCircle(rx - 0.5, ry - 0.5, 1.5);
+    }
+
+    this.add(this.background);
+
+    if (title) {
+      // Title bar
+      this.background.fillStyle(COCKPIT_CONFIG.metalHighlight, 0.4);
+      this.background.fillRect(6, 6, width - 12, 40);
+      this.background.lineStyle(1, COCKPIT_CONFIG.accentColor, 0.2);
+      this.background.lineBetween(6, 46, width - 6, 46);
+
+      this.titleText = scene.add.text(width / 2, 26, title, {
+        fontSize: '24px',
+        fontFamily: 'monospace',
+        color: '#00ffff',
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+      this.add(this.titleText);
+    }
+
+    scene.add.existing(this);
   }
 }

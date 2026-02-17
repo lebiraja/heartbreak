@@ -20,6 +20,8 @@ export function safeGetSettings(settings: GameSettings | null | undefined): Game
     screenShake: settings.screenShake ?? DEFAULT_SETTINGS.screenShake,
     particles: settings.particles ?? DEFAULT_SETTINGS.particles,
     showFPS: settings.showFPS ?? DEFAULT_SETTINGS.showFPS,
+    textSpeed: settings.textSpeed ?? DEFAULT_SETTINGS.textSpeed,
+    subtitles: settings.subtitles ?? DEFAULT_SETTINGS.subtitles,
     controls: settings.controls ?? DEFAULT_SETTINGS.controls
   };
 }

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
-import { GAME_CONFIG, COLORS } from '@/config';
+import { GAME_CONFIG, COLORS, COCKPIT_CONFIG } from '@/config';
 import { UIButton, Panel } from '@/ui/UIComponents';
+import { CockpitOverlay } from '@/ui/CockpitOverlay';
 import { saveSystem } from '@/systems/SaveSystem';
 import { audioManager } from '@/systems/AudioManager';
 
@@ -77,7 +78,8 @@ export class TitleScene extends Phaser.Scene {
       'START GAME',
       () => {
         audioManager.playSfx('ui_select', 0.5);
-        this.scene.start('LevelSelectScene');
+        audioManager.stopMusic(true);
+        this.scene.start('OpeningScene');
       }
     );
 

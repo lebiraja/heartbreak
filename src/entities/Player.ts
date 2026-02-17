@@ -236,10 +236,22 @@ export class Player extends Phaser.GameObjects.Container {
     this.destroy();
   }
 
+  private playableArea?: Phaser.Geom.Rectangle;
+
+  setPlayableArea(area: Phaser.Geom.Rectangle): void {
+    this.playableArea = area;
+  }
+
   private constrainToScreen(): void {
-    const cam = this.scene.cameras.main;
-    this.x = Phaser.Math.Clamp(this.x, 30, cam.width - 30);
-    this.y = Phaser.Math.Clamp(this.y, 30, cam.height - 30);
+    if (this.playableArea) {
+      const margin = 10;
+      this.x = Phaser.Math.Clamp(this.x, this.playableArea.x + margin, this.playableArea.x + this.playableArea.width - margin);
+      this.y = Phaser.Math.Clamp(this.y, this.playableArea.y + margin, this.playableArea.y + this.playableArea.height - margin);
+    } else {
+      const cam = this.scene.cameras.main;
+      this.x = Phaser.Math.Clamp(this.x, 30, cam.width - 30);
+      this.y = Phaser.Math.Clamp(this.y, 30, cam.height - 30);
+    }
   }
 
   destroy(fromScene?: boolean): void {

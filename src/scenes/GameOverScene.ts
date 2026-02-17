@@ -1,9 +1,13 @@
 import Phaser from 'phaser';
 import { GAME_CONFIG, COLORS } from '@/config';
-import { UIButton, Panel } from '@/ui/UIComponents';
+import { UIButton, Panel, TypewriterText, CockpitPanel } from '@/ui/UIComponents';
+import { CockpitOverlay } from '@/ui/CockpitOverlay';
 import { audioManager } from '@/systems/AudioManager';
+import { narrativeManager } from '@/systems/NarrativeManager';
 
 export class GameOverScene extends Phaser.Scene {
+  private cockpit?: CockpitOverlay;
+
   constructor() {
     super({ key: 'GameOverScene' });
   }
@@ -11,107 +15,135 @@ export class GameOverScene extends Phaser.Scene {
   create(data: { score: number; level: number; victory: boolean }): void {
     this.cameras.main.setBackgroundColor(COLORS.background);
 
-    const panel = new Panel(
-      this,
-      GAME_CONFIG.width / 2 - 300,
-      GAME_CONFIG.height / 2 - 250,
-      600,
-      500,
-      data.victory ? 'LEVEL COMPLETE' : 'MISSION FAILED'
-    );
+    // Cockpit overlay
+    this.cockpit = new CockpitOverlay(this);
+    const area = this.cockpit.getPlayableArea();
 
-    const resultText = this.add.text(
-      GAME_CONFIG.width / 2,
-      GAME_CONFIG.height / 2 - 150,
-      data.victory 
-        ? 'You have successfully navigated through the void.'
-        : 'Lost among the stars, but not forgotten.',
-      {
-        fontSize: '18px',
-        fontFamily: 'serif',
-        color: '#ffffff',
-        fontStyle: 'italic',
-        align: 'center',
-        wordWrap: { width: 500 }
-      }
-    ).setOrigin(0.5);
+    const cx = area.x + area.width / 2;
+    const baseY = area.y + 30;
 
-    const scoreText = this.add.text(
-      GAME_CONFIG.width / 2,
-      GAME_CONFIG.height / 2 - 70,
-      `SCORE: ${data.score.toLocaleString()}`,
-      {
-        fontSize: '32px',
-        fontFamily: 'monospace',
-        color: '#00ffff',
-        fontStyle: 'bold'
-      }
-    ).setOrigin(0.5);
+    // Title
+    const titleText = data.victory ? 'LEVEL COMPLETE' : 'MISSION FAILED';
+    const title = this.add.text(cx, baseY, titleText, {
+      fontSize: '32px',
+      fontFamily: 'monospace',
+      color: data.victory ? '#00ffcc' : '#ff4444',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(950);
 
-    const levelText = this.add.text(
-      GAME_CONFIG.width / 2,
-      GAME_CONFIG.height / 2 - 20,
-      `LEVEL: ${data.level}`,
-      {
-        fontSize: '24px',
-        fontFamily: 'monospace',
-        color: '#ffffff'
-      }
-    ).setOrigin(0.5);
+    // Score
+    this.add.text(cx, baseY + 50, `SCORE: ${data.score.toLocaleString()}`, {
+      fontSize: '24px',
+      fontFamily: 'monospace',
+      color: '#00ffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(950);
+
+    // Level
+    this.add.text(cx, baseY + 85, `LEVEL: ${data.level}`, {
+      fontSize: '18px',
+      fontFamily: 'monospace',
+      color: '#ffffff',
+    }).setOrigin(0.5).setDepth(950);
 
     if (data.victory) {
-      const continueButton = new UIButton(
-        this,
-        GAME_CONFIG.width / 2,
-        GAME_CONFIG.height / 2 + 60,
-        data.level < 10 ? 'NEXT LEVEL' : 'JOURNEY COMPLETE',
-        () => {
-          audioManager.playSfx('ui_select', 0.5);
-          if (data.level < 10) {
-            this.scene.start('GameScene', { level: data.level + 1 });
-          } else {
-            this.scene.start('TitleScene');
-          }
-        }
-      );
-    } else {
-      const retryButton = new UIButton(
-        this,
-        GAME_CONFIG.width / 2,
-        GAME_CONFIG.height / 2 + 60,
-        'RETRY',
-        () => {
-          audioManager.playSfx('ui_select', 0.5);
-          this.scene.start('GameScene', { level: data.level });
-        }
-      );
-    }
+      // Show reflection via typewriter
+      const reflection = narrativeManager.getReflection(data.level);
+      narrativeManager.markReflectionSeen(data.level);
+      narrativeManager.save();
 
-    const levelSelectButton = new UIButton(
-      this,
-      GAME_CONFIG.width / 2,
-      GAME_CONFIG.height / 2 + 130,
-      'LEVEL SELECT',
-      () => {
-        audioManager.playSfx('ui_back', 0.5);
-        this.scene.start('LevelSelectScene');
+      if (reflection) {
+        const typewriter = new TypewriterText(
+          this,
+          cx - area.width * 0.35,
+          baseY + 130,
+          {
+            fontSize: '17px',
+            fontFamily: 'Georgia, serif',
+            color: '#ccddee',
+            fontStyle: 'italic',
+            lineSpacing: 6,
+          },
+          'normal',
+          false,
+          area.width * 0.7
+        );
+        typewriter.setDepth(950);
+        typewriter.start(reflection);
+
+        // Show buttons after reflection completes (or after timeout)
+        const showButtons = () => this.showVictoryButtons(data, cx, baseY + 260);
+        typewriter.onComplete(() => {
+          this.time.delayedCall(1500, showButtons);
+        });
+        // Fallback timeout
+        this.time.delayedCall(8000, showButtons);
+      } else {
+        this.showVictoryButtons(data, cx, baseY + 130);
       }
-    );
 
-    const menuButton = new UIButton(
-      this,
-      GAME_CONFIG.width / 2,
-      GAME_CONFIG.height / 2 + 200,
-      'MAIN MENU',
-      () => {
-        audioManager.playSfx('ui_back', 0.5);
-        this.scene.start('TitleScene');
-      }
-    );
-
-    if (data.victory) {
       audioManager.stopMusic();
       audioManager.playMusic('victory_music', true);
+    } else {
+      // Defeat - show buttons immediately
+      const resultText = this.add.text(cx, baseY + 130, 'Lost among the stars, but not forgotten.', {
+        fontSize: '17px',
+        fontFamily: 'Georgia, serif',
+        color: '#999999',
+        fontStyle: 'italic',
+        align: 'center',
+        wordWrap: { width: area.width * 0.7 },
+      }).setOrigin(0.5).setDepth(950);
+
+      new UIButton(this, cx, baseY + 200, 'RETRY', () => {
+        audioManager.playSfx('ui_select', 0.5);
+        this.scene.start('VignetteScene', { level: data.level });
+      });
+
+      new UIButton(this, cx, baseY + 265, 'LEVEL SELECT', () => {
+        audioManager.playSfx('ui_back', 0.5);
+        this.scene.start('LevelSelectScene');
+      });
+
+      new UIButton(this, cx, baseY + 330, 'MAIN MENU', () => {
+        audioManager.playSfx('ui_back', 0.5);
+        this.scene.start('TitleScene');
+      });
     }
+  }
+
+  private buttonsShown = false;
+
+  private showVictoryButtons(data: { score: number; level: number; victory: boolean }, cx: number, y: number): void {
+    if (this.buttonsShown) return;
+    this.buttonsShown = true;
+
+    // For Level 10 victory, go to EndingScene
+    if (data.level >= 10) {
+      new UIButton(this, cx, y, 'CONTINUE TO ENDING', () => {
+        audioManager.stopMusic();
+        this.scene.start('EndingScene');
+      });
+    } else {
+      new UIButton(this, cx, y, 'NEXT LEVEL', () => {
+        audioManager.playSfx('ui_select', 0.5);
+        this.scene.start('VignetteScene', { level: data.level + 1 });
+      });
+    }
+
+    new UIButton(this, cx, y + 65, 'LEVEL SELECT', () => {
+      audioManager.playSfx('ui_back', 0.5);
+      this.scene.start('LevelSelectScene');
+    });
+
+    new UIButton(this, cx, y + 130, 'MAIN MENU', () => {
+      audioManager.playSfx('ui_back', 0.5);
+      this.scene.start('TitleScene');
+    });
+  }
+
+  shutdown(): void {
+    this.buttonsShown = false;
+    this.cockpit?.destroy();
   }
 }

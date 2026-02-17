@@ -13,46 +13,56 @@ export class ParticleManager {
   constructor(scene: Phaser.Scene, settings: GameSettings) {
     this.scene = scene;
     this.settings = settings;
+    this.initTextures();
+  }
+
+  private initTextures(): void {
+    // Generate all particle textures once at startup with neutral white color.
+    // Using tint at emit-time for color variation avoids overwriting shared textures.
+    if (!this.scene.textures.exists('particle_dot_4')) {
+      const g4 = this.scene.add.graphics();
+      g4.fillStyle(0xffffff, 1);
+      g4.fillCircle(2, 2, 2);
+      g4.generateTexture('particle_dot_4', 4, 4);
+      g4.destroy();
+    }
+    if (!this.scene.textures.exists('particle_dot_2')) {
+      const g2 = this.scene.add.graphics();
+      g2.fillStyle(0xffffff, 1);
+      g2.fillCircle(1, 1, 1);
+      g2.generateTexture('particle_dot_2', 2, 2);
+      g2.destroy();
+    }
   }
 
   createExplosion(x: number, y: number, color: number = 0xff6600, size: number = 1): void {
     if (!this.settings.particles) return;
 
     const particleCount = Math.floor(20 * size);
-    const graphics = this.scene.add.graphics();
-    graphics.fillStyle(color, 1);
-    graphics.fillCircle(2, 2, 2);
-    graphics.generateTexture('particle_explosion', 4, 4);
-    graphics.destroy();
-
-    const emitter = this.scene.add.particles(x, y, 'particle_explosion', {
+    const emitter = this.scene.add.particles(x, y, 'particle_dot_4', {
       speed: { min: 50 * size, max: 200 * size },
       angle: { min: 0, max: 360 },
       scale: { start: 1 * size, end: 0 },
       alpha: { start: 1, end: 0 },
+      tint: color,
       lifespan: 600,
       blendMode: 'ADD',
       quantity: particleCount
     });
 
-    this.scene.time.delayedCall(600, () => {
-      emitter.destroy();
+    this.scene.time.delayedCall(700, () => {
+      if (emitter.active) emitter.destroy();
     });
   }
 
   createTrail(x: number, y: number, color: number = 0x00ffff): Phaser.GameObjects.Particles.ParticleEmitter | null {
     if (!this.settings.particles) return null;
 
-    const graphics = this.scene.add.graphics();
-    graphics.fillStyle(color, 1);
-    graphics.fillCircle(1, 1, 1);
-    graphics.generateTexture('particle_trail', 2, 2);
-    graphics.destroy();
-
-    return this.scene.add.particles(x, y, 'particle_trail', {
+    return this.scene.add.particles(x, y, 'particle_dot_2', {
       speed: 20,
       scale: { start: 0.8, end: 0 },
       alpha: { start: 0.8, end: 0 },
+      tint: color,
       lifespan: 300,
       blendMode: 'ADD',
       frequency: 30
@@ -62,24 +72,19 @@ export class ParticleManager {
   createHitEffect(x: number, y: number, color: number = 0xffff00): void {
     if (!this.settings.particles) return;
 
-    const graphics = this.scene.add.graphics();
-    graphics.fillStyle(color, 1);
-    graphics.fillCircle(2, 2, 2);
-    graphics.generateTexture('particle_hit', 4, 4);
-    graphics.destroy();
-
-    const emitter = this.scene.add.particles(x, y, 'particle_hit', {
+    const emitter = this.scene.add.particles(x, y, 'particle_dot_4', {
       speed: { min: 30, max: 100 },
       angle: { min: 0, max: 360 },
       scale: { start: 0.8, end: 0 },
       alpha: { start: 1, end: 0 },
+      tint: color,
       lifespan: 300,
       blendMode: 'ADD',
       quantity: 5
     });
 
-    this.scene.time.delayedCall(300, () => {
-      emitter.destroy();
+    this.scene.time.delayedCall(400, () => {
+      if (emitter.active) emitter.destroy();
     });
   }
 
@@ -141,15 +146,12 @@ export class ParticleManager {
       });
     }
 
-    // Bullet-time slow motion
+    // Bullet-time slow motion — restore via delayedCall (can't tween TimePlugin directly)
     if (config.bulletTimeEnabled) {
       this.scene.time.timeScale = 0.25;
+      // delayedCall fires after bulletTimeDuration * 0.25 game-time ms (= bulletTimeDuration real ms at 0.25x)
       this.scene.time.delayedCall(config.bulletTimeDuration * 0.25, () => {
-        this.scene.tweens.add({
-          targets: this.scene.time,
-          timeScale: 1,
-          duration: 200,
-        });
+        this.scene.time.timeScale = 1;
       });
     }
 

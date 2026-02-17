@@ -154,9 +154,9 @@ export class Enemy extends Phaser.GameObjects.Container {
         // Telegraph every 3 seconds: flash visible briefly
         if (this.telegraphTimer > 3000) {
           this.telegraphTimer = 0;
-          this.ship.setAlpha(0.8);
+          if (this.active) this.ship.setAlpha(0.8);
           this.scene.time.delayedCall(400, () => {
-            if (this.active) this.ship.setAlpha(0.05);
+            if (this.active && this.ship.active) this.ship.setAlpha(0.05);
           });
         }
         // Move straight down while hidden

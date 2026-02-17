@@ -61,6 +61,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   init(data: { level: number }): void {
+    // Remove all previous event listeners to prevent stacking on scene restart
+    this.events.removeAllListeners();
+
     this.playerState.level = data.level || 1;
     this.levelConfig = LEVEL_CONFIGS[this.playerState.level - 1];
     
@@ -155,7 +158,7 @@ export class GameScene extends Phaser.Scene {
       this.environmentManager.update(delta);
     }
 
-    if (this.player) {
+    if (this.player && this.player.active) {
       this.player.update(time, delta);
       this.playerState.health = this.player.health;
       this.playerState.shield = this.player.shield;
@@ -173,72 +176,128 @@ export class GameScene extends Phaser.Scene {
     // Adaptive audio: crossfade combat/ambient layers
     audioManager.setCombatState(this.enemies.length > 0);
 
-    this.enemies.forEach((enemy, index) => {
-      if (this.player) {
+    // === ENEMIES — reverse loop so splice is safe ===
+    for (let i = this.enemies.length - 1; i >= 0; i--) {
+      const enemy = this.enemies[i];
+      // Remove destroyed objects immediately
+      if (!enemy.active) {
+        this.enemies.splice(i, 1);
+        continue;
+      }
+
+      if (this.player && this.player.active) {
         enemy.update(delta, this.player.x, this.player.y);
+      }
+
+      // Re-check active after update (update may trigger death)
+      if (!enemy.active) {
+        this.enemies.splice(i, 1);
+        continue;
       }
 
       if (enemy.isOffScreen()) {
         enemy.destroy();
-        this.enemies.splice(index, 1);
+        this.enemies.splice(i, 1);
+        continue;
       }
 
-      if (this.player && Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y) < 30) {
+      if (this.player && this.player.active &&
+          Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y) < 30) {
         this.player.takeDamage(ENEMY_TYPES[enemy.enemyType as keyof typeof ENEMY_TYPES].damage);
         enemy.takeDamage(999);
+        this.enemies.splice(i, 1);
       }
-    });
+    }
 
-    this.projectiles.forEach((projectile, index) => {
+    // === PLAYER PROJECTILES — reverse loop ===
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const projectile = this.projectiles[i];
+      if (!projectile.active) {
+        this.projectiles.splice(i, 1);
+        continue;
+      }
+
       projectile.update(delta);
 
       if (projectile.isOffScreen()) {
         projectile.destroy();
-        this.projectiles.splice(index, 1);
-        return;
+        this.projectiles.splice(i, 1);
+        continue;
       }
 
       if (projectile.isPlayerProjectile) {
-        this.enemies.forEach((enemy) => {
-          if (Phaser.Math.Distance.Between(projectile.x, projectile.y, enemy.x, enemy.y) < 20) {
-            const destroyed = enemy.takeDamage(projectile.damage);
-            projectile.destroy();
-            this.projectiles.splice(index, 1);
+        let hit = false;
+        for (let j = this.enemies.length - 1; j >= 0; j--) {
+          const enemy = this.enemies[j];
+          if (!enemy.active) {
+            this.enemies.splice(j, 1);
+            continue;
           }
-        });
+          if (Phaser.Math.Distance.Between(projectile.x, projectile.y, enemy.x, enemy.y) < 20) {
+            enemy.takeDamage(projectile.damage);
+            if (!enemy.active) this.enemies.splice(j, 1);
+            projectile.destroy();
+            this.projectiles.splice(i, 1);
+            hit = true;
+            break;
+          }
+        }
+        if (hit) continue;
       } else {
-        if (this.player && Phaser.Math.Distance.Between(projectile.x, projectile.y, this.player.x, this.player.y) < 20) {
+        if (this.player && this.player.active &&
+            Phaser.Math.Distance.Between(projectile.x, projectile.y, this.player.x, this.player.y) < 20) {
           this.player.takeDamage(projectile.damage);
           projectile.destroy();
-          this.projectiles.splice(index, 1);
+          this.projectiles.splice(i, 1);
         }
       }
-    });
+    }
 
-    this.chargedProjectiles.forEach((projectile, index) => {
+    // === CHARGED PROJECTILES — reverse loop ===
+    for (let i = this.chargedProjectiles.length - 1; i >= 0; i--) {
+      const projectile = this.chargedProjectiles[i];
+      if (!projectile.active) {
+        this.chargedProjectiles.splice(i, 1);
+        continue;
+      }
+
       projectile.update(delta);
 
       if (projectile.isOffScreen()) {
         projectile.destroy();
-        this.chargedProjectiles.splice(index, 1);
-        return;
+        this.chargedProjectiles.splice(i, 1);
+        continue;
       }
 
-      this.enemies.forEach((enemy) => {
-        if (Phaser.Math.Distance.Between(projectile.x, projectile.y, enemy.x, enemy.y) < 30) {
-          enemy.takeDamage(projectile.damage);
-          this.particleManager.createExplosion(enemy.x, enemy.y, 0xffff00, 1);
+      for (let j = this.enemies.length - 1; j >= 0; j--) {
+        const enemy = this.enemies[j];
+        if (!enemy.active) {
+          this.enemies.splice(j, 1);
+          continue;
         }
-      });
-    });
+        if (Phaser.Math.Distance.Between(projectile.x, projectile.y, enemy.x, enemy.y) < 30) {
+          const ex = enemy.x, ey = enemy.y;
+          enemy.takeDamage(projectile.damage);
+          if (!enemy.active) this.enemies.splice(j, 1);
+          this.particleManager.createExplosion(ex, ey, 0xffff00, 1);
+        }
+      }
+    }
 
-    this.memoryShards.forEach((shard, index) => {
-      if (this.player && Phaser.Math.Distance.Between(this.player.x, this.player.y, shard.x, shard.y) < 30) {
+    // === MEMORY SHARDS — reverse loop ===
+    for (let i = this.memoryShards.length - 1; i >= 0; i--) {
+      const shard = this.memoryShards[i];
+      if (!shard.active) {
+        this.memoryShards.splice(i, 1);
+        continue;
+      }
+      if (this.player && this.player.active &&
+          Phaser.Math.Distance.Between(this.player.x, this.player.y, shard.x, shard.y) < 30) {
         this.collectMemoryShard();
         shard.destroy();
-        this.memoryShards.splice(index, 1);
+        this.memoryShards.splice(i, 1);
       }
-    });
+    }
 
     if (this.comboTimer > 0) {
       this.comboTimer -= delta;
@@ -249,37 +308,48 @@ export class GameScene extends Phaser.Scene {
 
     this.hud.update(this.playerState);
 
-    // Boss update and projectile handling
-    if (this.boss) {
-      if (this.player) {
+    // === BOSS update ===
+    if (this.boss && this.boss.active) {
+      if (this.player && this.player.active) {
         this.boss.update(delta, this.player.x, this.player.y);
       }
-      this.bossProjectiles.forEach((p, i) => {
+
+      // Boss projectiles vs player — reverse loop
+      for (let i = this.bossProjectiles.length - 1; i >= 0; i--) {
+        const p = this.bossProjectiles[i];
+        if (!p.active) {
+          this.bossProjectiles.splice(i, 1);
+          continue;
+        }
         p.update(delta);
         if (p.isOffScreen()) {
           p.destroy();
           this.bossProjectiles.splice(i, 1);
-          return;
+          continue;
         }
-        if (this.player && Phaser.Math.Distance.Between(p.x, p.y, this.player.x, this.player.y) < 20) {
+        if (this.player && this.player.active &&
+            Phaser.Math.Distance.Between(p.x, p.y, this.player.x, this.player.y) < 20) {
           this.player.takeDamage(p.damage);
           p.destroy();
           this.bossProjectiles.splice(i, 1);
         }
-      });
-      this.projectiles.forEach((p, i) => {
-        if (p.isPlayerProjectile && this.boss) {
-          if (Phaser.Math.Distance.Between(p.x, p.y, this.boss.x, this.boss.y) < 40) {
-            const killed = this.boss.takeDamage(p.damage);
-            p.destroy();
-            this.projectiles.splice(i, 1);
-            if (killed) {
-              this.boss = undefined;
-              this.playerState.score += 5000;
-            }
+      }
+
+      // Player projectiles vs boss — reverse loop
+      for (let i = this.projectiles.length - 1; i >= 0; i--) {
+        const p = this.projectiles[i];
+        if (!p.active || !this.boss || !this.boss.active) continue;
+        if (p.isPlayerProjectile &&
+            Phaser.Math.Distance.Between(p.x, p.y, this.boss.x, this.boss.y) < 40) {
+          const killed = this.boss.takeDamage(p.damage);
+          p.destroy();
+          this.projectiles.splice(i, 1);
+          if (killed) {
+            this.boss = undefined;
+            this.playerState.score += 5000;
           }
         }
-      });
+      }
     }
 
     if (this.currentWave < this.levelConfig.waves.length) {
@@ -299,7 +369,7 @@ export class GameScene extends Phaser.Scene {
     // L5 proximity-based choice: NPC encounter (trust_bridge)
     if (this.playerState.level === 5 && !this.l5ChoiceMade && !this.choicePending) {
       const alreadyMade = narrativeManager.getChoiceMade('trust_bridge');
-      if (!alreadyMade && this.player && this.enemies.length === 0 && this.currentWave >= 2) {
+      if (!alreadyMade && this.player && this.player.active && this.enemies.length === 0 && this.currentWave >= 2) {
         this.l5ChoiceMade = true;
         this.triggerChoice('trust_bridge');
       }

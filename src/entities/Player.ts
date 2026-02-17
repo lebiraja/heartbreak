@@ -349,12 +349,22 @@ export class Player extends Phaser.GameObjects.Container {
     if (!this.fogOverlay || !this.playableArea) return;
     this.fogOverlay.clear();
     const area = this.playableArea;
-    // Fog clears around player position, dark elsewhere
-    this.fogOverlay.fillStyle(0x220033, density);
-    this.fogOverlay.fillRect(area.x, area.y, area.width, area.height);
-    // Clear a radius around player
-    this.fogOverlay.fillStyle(0x220033, 0);
-    this.fogOverlay.fillCircle(this.x, this.y, 120);
+    const px = this.x;
+    const py = this.y;
+    const radius = 130;
+    // Draw fog as four rectangles surrounding the player's visibility circle
+    // (Graphics API cannot punch holes with alpha-0 fill, so we avoid the full-rect approach)
+    this.fogOverlay.fillStyle(0x110022, density);
+    // Top strip
+    this.fogOverlay.fillRect(area.x, area.y, area.width, Math.max(0, py - radius - area.y));
+    // Bottom strip
+    const bottomY = py + radius;
+    this.fogOverlay.fillRect(area.x, bottomY, area.width, Math.max(0, area.y + area.height - bottomY));
+    // Left strip (middle band)
+    this.fogOverlay.fillRect(area.x, py - radius, Math.max(0, px - radius - area.x), radius * 2);
+    // Right strip (middle band)
+    const rightX = px + radius;
+    this.fogOverlay.fillRect(rightX, py - radius, Math.max(0, area.x + area.width - rightX), radius * 2);
   }
 
   private constrainToScreen(): void {
